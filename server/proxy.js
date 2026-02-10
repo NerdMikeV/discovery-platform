@@ -64,7 +64,7 @@ app.post('/api/anthropic', async (req, res) => {
 });
 
 // Catch-all for client-side routing - serve index.html for all other routes
-app.get('*', (req, res) => {
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
