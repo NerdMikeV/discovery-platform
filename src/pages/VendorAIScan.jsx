@@ -206,7 +206,7 @@ export default function VendorAIScan() {
         const maxRetries = 1;
 
         while (retryCount <= maxRetries) {
-          const response = await fetch('http://localhost:3003/api/anthropic', {
+          const response = await fetch('/api/anthropic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -277,7 +277,7 @@ export default function VendorAIScan() {
       let synthesisRetry = 0;
 
       while (synthesisRetry <= 1) {
-        const synthesisResponse = await fetch('http://localhost:3003/api/anthropic', {
+        const synthesisResponse = await fetch('/api/anthropic', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
