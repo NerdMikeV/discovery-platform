@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ClipboardList, Search, Cpu, Users } from 'lucide-react';
+import { ClipboardList, Search, Cpu, Users, Mic } from 'lucide-react';
 
 const tools = [
   {
@@ -33,6 +33,15 @@ const tools = [
     path: '/employee-pulse',
     color: 'teal',
     time: '5-10 min'
+  },
+  {
+    name: 'Stakeholder Discovery',
+    description: 'Voice AI interviews to surface pain points and opportunities across the organization',
+    icon: Mic,
+    path: 'https://discovery.claris-ai.com/',
+    color: 'orange',
+    time: '15-20 min',
+    external: true
   }
 ];
 
@@ -40,7 +49,8 @@ const colorClasses = {
   blue: { bg: 'bg-blue-100', text: 'text-blue-600' },
   indigo: { bg: 'bg-indigo-100', text: 'text-indigo-600' },
   purple: { bg: 'bg-purple-100', text: 'text-purple-600' },
-  teal: { bg: 'bg-teal-100', text: 'text-teal-600' }
+  teal: { bg: 'bg-teal-100', text: 'text-teal-600' },
+  orange: { bg: 'bg-orange-100', text: 'text-orange-600' }
 };
 
 export default function Home() {
@@ -58,18 +68,34 @@ export default function Home() {
           {tools.map(tool => {
             const Icon = tool.icon;
             const colors = colorClasses[tool.color];
-            return (
-              <Link
-                key={tool.path}
-                to={tool.path}
-                className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition-shadow"
-              >
+            const cardClassName = "bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition-shadow";
+            const cardContent = (
+              <>
                 <div className={`w-12 h-12 ${colors.bg} rounded-lg flex items-center justify-center mb-4`}>
                   <Icon className={`w-6 h-6 ${colors.text}`} />
                 </div>
                 <h2 className="text-lg font-semibold text-gray-900">{tool.name}</h2>
                 <p className="text-gray-600 text-sm mt-1">{tool.description}</p>
                 <p className="text-gray-400 text-xs mt-3">Estimated time: {tool.time}</p>
+              </>
+            );
+            return tool.external ? (
+              <a
+                key={tool.path}
+                href={tool.path}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cardClassName}
+              >
+                {cardContent}
+              </a>
+            ) : (
+              <Link
+                key={tool.path}
+                to={tool.path}
+                className={cardClassName}
+              >
+                {cardContent}
               </Link>
             );
           })}
