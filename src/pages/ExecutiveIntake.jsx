@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronRight, ChevronLeft, Check, Building2, Target, Shield, Users, Gauge, DollarSign } from 'lucide-react';
+import { useAssessment } from '../context/AssessmentContext';
 
 const sections = [
   { id: 'company', title: 'Company Profile', icon: Building2 },
@@ -454,6 +455,7 @@ export default function ExecutiveIntake() {
   const [currentSection, setCurrentSection] = useState(0);
   const [responses, setResponses] = useState({});
   const [completed, setCompleted] = useState(false);
+  const { ensureAssessment } = useAssessment();
 
   const updateResponse = (questionId, value) => {
     setResponses(prev => ({ ...prev, [questionId]: value }));
@@ -471,11 +473,34 @@ export default function ExecutiveIntake() {
   const currentQuestions = questions[sections[currentSection].id];
   const Icon = sections[currentSection].icon;
 
+  const saveToSupabase = async () => {
+    try {
+      const id = await ensureAssessment(
+        responses.company_name,
+        responses.industry,
+        responses.company_size
+      );
+      if (!id) return;
+      await fetch(`/api/assessments/${id}/executive-intake`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          respondent_name: responses.company_name,
+          respondent_role: responses.your_role,
+          responses,
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to save executive intake:', err);
+    }
+  };
+
   const nextSection = () => {
     if (currentSection < sections.length - 1) {
       setCurrentSection(currentSection + 1);
     } else {
       setCompleted(true);
+      saveToSupabase();
     }
   };
 

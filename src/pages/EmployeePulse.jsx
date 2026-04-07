@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronRight, ChevronLeft, Check, Shield, Users, Brain, Lightbulb, HeartHandshake, BarChart3 } from 'lucide-react';
+import { useAssessment } from '../context/AssessmentContext';
 
 const sections = [
   { id: 'about', title: 'About You', icon: Users },
@@ -283,6 +284,8 @@ export default function EmployeePulse() {
   const [currentSection, setCurrentSection] = useState(0);
   const [responses, setResponses] = useState({});
   const [completed, setCompleted] = useState(false);
+  const { assessmentId, companyName: ctxCompanyName, ensureAssessment } = useAssessment();
+  const [localCompanyName, setLocalCompanyName] = useState('');
 
   const updateResponse = (questionId, value) => {
     setResponses(prev => ({ ...prev, [questionId]: value }));
@@ -300,11 +303,27 @@ export default function EmployeePulse() {
   const currentQuestions = questions[sections[currentSection].id];
   const Icon = sections[currentSection].icon;
 
+  const saveToSupabase = async () => {
+    try {
+      const name = localCompanyName || ctxCompanyName;
+      const id = await ensureAssessment(name);
+      if (!id) return;
+      await fetch(`/api/assessments/${id}/employee-pulse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ responses }),
+      });
+    } catch (err) {
+      console.error('Failed to save employee pulse:', err);
+    }
+  };
+
   const nextSection = () => {
     if (currentSection < sections.length - 1) {
       setCurrentSection(currentSection + 1);
     } else {
       setCompleted(true);
+      saveToSupabase();
     }
   };
 
@@ -459,7 +478,21 @@ export default function EmployeePulse() {
           <Shield className="w-4 h-4" />
           <span className="text-sm font-medium">This survey is anonymous</span>
         </div>
-        
+
+        {/* Company name prompt if no active assessment */}
+        {!assessmentId && (
+          <div className="mb-6 p-4 bg-teal-50 rounded-lg border border-teal-200 max-w-md mx-auto">
+            <label className="block text-sm font-medium text-teal-800 mb-1">What company is this assessment for?</label>
+            <input
+              type="text"
+              value={localCompanyName}
+              onChange={(e) => setLocalCompanyName(e.target.value)}
+              placeholder="Enter company name"
+              className="w-full px-4 py-2 border border-teal-300 rounded-lg focus:ring-2 focus:ring-teal-500 bg-white"
+            />
+          </div>
+        )}
+
         {/* Progress */}
         <div className="mb-8">
           <div className="flex justify-between mb-2">

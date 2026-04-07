@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Package, Loader2, AlertCircle, ChevronDown, ChevronUp, Plus, X, Cpu, Zap, Calendar, Link, Clock } from 'lucide-react';
+import { useAssessment } from '../context/AssessmentContext';
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -135,6 +136,8 @@ export default function VendorAIScan() {
   const [expandedSections, setExpandedSections] = useState({});
   const [error, setError] = useState(null);
   const logEndRef = useRef(null);
+  const { assessmentId, companyName: ctxCompanyName, setCompanyName: setCtxCompanyName, ensureAssessment } = useAssessment();
+  const [localCompanyName, setLocalCompanyName] = useState('');
 
   useEffect(() => {
     if (logEndRef.current) {
@@ -313,6 +316,22 @@ export default function VendorAIScan() {
         synthesis,
         generatedAt: new Date().toLocaleString()
       });
+
+      // Save to Supabase (fire-and-forget)
+      (async () => {
+        try {
+          const name = localCompanyName || ctxCompanyName;
+          const id = await ensureAssessment(name);
+          if (!id) return;
+          await fetch(`/api/assessments/${id}/vendor-scan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vendors: vendorResults, synthesis }),
+          });
+        } catch (err) {
+          console.error('Failed to save vendor scan:', err);
+        }
+      })();
 
     } catch (err) {
       setError(`Research failed: ${err.message}`);
@@ -537,6 +556,20 @@ export default function VendorAIScan() {
         </div>
 
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+          {/* Company name prompt if no active assessment */}
+          {!assessmentId && (
+            <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
+              <label className="block text-sm font-medium text-purple-800 mb-1">What company is this assessment for?</label>
+              <input
+                type="text"
+                value={localCompanyName}
+                onChange={(e) => setLocalCompanyName(e.target.value)}
+                placeholder="Enter company name"
+                className="w-full px-4 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 bg-white"
+              />
+            </div>
+          )}
+
           {/* Vendor List */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">

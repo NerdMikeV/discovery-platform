@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Building2, Loader2, AlertCircle, TrendingUp, Briefcase, Cpu, Users, FileText, ChevronDown, ChevronUp, Plus, X, Sparkles, Link, ExternalLink, Clock } from 'lucide-react';
+import { useAssessment } from '../context/AssessmentContext';
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -119,6 +120,7 @@ export default function CompetitiveIntelligence() {
   const [error, setError] = useState(null);
   const [expandedSections, setExpandedSections] = useState({});
   const logEndRef = useRef(null);
+  const { ensureAssessment } = useAssessment();
 
   useEffect(() => {
     if (logEndRef.current) {
@@ -343,15 +345,36 @@ export default function CompetitiveIntelligence() {
 
       addLogEntry('success', '✅ Analysis complete!');
 
-      setResults({
+      const resultData = {
         userCompany: companyName,
         industry,
         companies: companyResults,
         synthesis,
         generatedAt: new Date().toLocaleString()
-      });
+      };
 
+      setResults(resultData);
       setStep('results');
+
+      // Save to Supabase (fire-and-forget)
+      (async () => {
+        try {
+          const id = await ensureAssessment(companyName, industry);
+          if (!id) return;
+          await fetch(`/api/assessments/${id}/competitive-intel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              company_name: companyName,
+              industry,
+              competitors: companyResults,
+              synthesis,
+            }),
+          });
+        } catch (err) {
+          console.error('Failed to save competitive intel:', err);
+        }
+      })();
 
     } catch (err) {
       setError(`Research failed: ${err.message}`);
