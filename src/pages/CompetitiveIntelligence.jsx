@@ -271,6 +271,77 @@ export default function CompetitiveIntelligence() {
     setExportMenuOpen(false);
   };
 
+  // html2canvas can't parse oklch() colors (used by Tailwind v4). We work
+  // around this by walking the live DOM, finding any computed color/gradient
+  // that contains oklch(), converting via the canvas API (which the browser
+  // resolves to rgb), and inlining the rgb on each element. We track every
+  // change so we can restore the DOM exactly after capture.
+  const inlineOklchAsRgb = (root) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const oklchRegex = /oklch\([^)]+\)/g;
+    const colorProps = [
+      'color',
+      'backgroundColor',
+      'borderTopColor',
+      'borderRightColor',
+      'borderBottomColor',
+      'borderLeftColor',
+      'outlineColor',
+      'fill',
+      'stroke',
+    ];
+    const changes = []; // [{ el, prop, original }]
+
+    const convert = (cssColor) => {
+      // Canvas resolves oklch (and any other valid color) to rgb when assigned
+      ctx.fillStyle = '#000';
+      ctx.fillStyle = cssColor;
+      return ctx.fillStyle;
+    };
+
+    const walk = (el) => {
+      if (!el || el.nodeType !== 1) return;
+      const computed = getComputedStyle(el);
+
+      colorProps.forEach((prop) => {
+        const value = computed[prop];
+        if (value && value.includes('oklch')) {
+          try {
+            const rgb = convert(value);
+            changes.push({ el, prop, original: el.style[prop] });
+            el.style[prop] = rgb;
+          } catch (e) {
+            // ignore unparseable values
+          }
+        }
+      });
+
+      // Gradients: replace each oklch(...) substring inside background-image
+      const bgImage = computed.backgroundImage;
+      if (bgImage && bgImage.includes('oklch')) {
+        try {
+          const replaced = bgImage.replace(oklchRegex, (m) => convert(m));
+          changes.push({ el, prop: 'backgroundImage', original: el.style.backgroundImage });
+          el.style.backgroundImage = replaced;
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      el.childNodes.forEach(walk);
+    };
+
+    walk(root);
+    return changes;
+  };
+
+  const restoreOklch = (changes) => {
+    changes.forEach(({ el, prop, original }) => {
+      el.style[prop] = original;
+    });
+  };
+
   const exportPDF = async () => {
     if (!reportRef.current) return;
     setIsExporting(true);
@@ -285,6 +356,9 @@ export default function CompetitiveIntelligence() {
     // Wait for re-render
     await new Promise(resolve => setTimeout(resolve, 200));
 
+    // Inline oklch->rgb conversions on the live DOM so html2canvas can parse them
+    const oklchChanges = inlineOklchAsRgb(reportRef.current);
+
     try {
       const filename = `competitive-ai-${slugify(results?.userCompany)}-${new Date().toISOString().slice(0, 10)}.pdf`;
       await html2pdf()
@@ -292,7 +366,12 @@ export default function CompetitiveIntelligence() {
           margin: [10, 10, 10, 10],
           filename,
           image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: { scale: 2, useCORS: true, logging: false },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff',
+          },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
           pagebreak: { mode: ['css', 'legacy'] },
         })
@@ -302,6 +381,7 @@ export default function CompetitiveIntelligence() {
       console.error('PDF export failed:', err);
       alert('PDF export failed. Try Markdown export instead.');
     } finally {
+      restoreOklch(oklchChanges);
       setExpandedSections(previousExpanded);
       setIsExporting(false);
     }
