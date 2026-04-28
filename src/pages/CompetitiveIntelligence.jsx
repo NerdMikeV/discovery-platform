@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Building2, Loader2, AlertCircle, TrendingUp, Briefcase, Cpu, Users, FileText, ChevronDown, ChevronUp, Plus, X, Sparkles, Link, ExternalLink, Clock, Download, FileDown, FileJson, FileText as FileTextIcon, History, ArrowRight } from 'lucide-react';
 import { useAssessment } from '../context/AssessmentContext';
-import html2pdf from 'html2pdf.js';
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -325,117 +324,40 @@ export default function CompetitiveIntelligence() {
     setExportMenuOpen(false);
   };
 
-  // html2canvas can't parse oklch() colors (used by Tailwind v4). We work
-  // around this by walking the live DOM, finding any computed color/gradient
-  // that contains oklch(), converting via the canvas API (which the browser
-  // resolves to rgb), and inlining the rgb on each element. We track every
-  // change so we can restore the DOM exactly after capture.
-  const inlineOklchAsRgb = (root) => {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const oklchRegex = /oklch\([^)]+\)/g;
-    const colorProps = [
-      'color',
-      'backgroundColor',
-      'borderTopColor',
-      'borderRightColor',
-      'borderBottomColor',
-      'borderLeftColor',
-      'outlineColor',
-      'fill',
-      'stroke',
-    ];
-    const changes = []; // [{ el, prop, original }]
-
-    const convert = (cssColor) => {
-      // Canvas resolves oklch (and any other valid color) to rgb when assigned
-      ctx.fillStyle = '#000';
-      ctx.fillStyle = cssColor;
-      return ctx.fillStyle;
-    };
-
-    const walk = (el) => {
-      if (!el || el.nodeType !== 1) return;
-      const computed = getComputedStyle(el);
-
-      colorProps.forEach((prop) => {
-        const value = computed[prop];
-        if (value && value.includes('oklch')) {
-          try {
-            const rgb = convert(value);
-            changes.push({ el, prop, original: el.style[prop] });
-            el.style[prop] = rgb;
-          } catch (e) {
-            // ignore unparseable values
-          }
-        }
-      });
-
-      // Gradients: replace each oklch(...) substring inside background-image
-      const bgImage = computed.backgroundImage;
-      if (bgImage && bgImage.includes('oklch')) {
-        try {
-          const replaced = bgImage.replace(oklchRegex, (m) => convert(m));
-          changes.push({ el, prop: 'backgroundImage', original: el.style.backgroundImage });
-          el.style.backgroundImage = replaced;
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      el.childNodes.forEach(walk);
-    };
-
-    walk(root);
-    return changes;
-  };
-
-  const restoreOklch = (changes) => {
-    changes.forEach(({ el, prop, original }) => {
-      el.style[prop] = original;
-    });
-  };
-
+  // PDF export uses the browser's native print dialog. The browser's CSS
+  // engine handles oklch() colors and gradients natively (unlike html2canvas),
+  // so output fidelity is high. The user picks "Save as PDF" in the print
+  // dialog. The document title is temporarily set so the suggested filename
+  // is meaningful.
   const exportPDF = async () => {
-    if (!reportRef.current) return;
-    setIsExporting(true);
     setExportMenuOpen(false);
+    setIsExporting(true);
 
-    // Expand all company sections so they render in the PDF
+    const previousTitle = document.title;
     const previousExpanded = expandedSections;
-    const allExpanded = {};
-    results.companies.forEach(c => { allExpanded[c.name] = true; });
-    setExpandedSections(allExpanded);
-
-    // Wait for re-render
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    // Inline oklch->rgb conversions on the live DOM so html2canvas can parse them
-    const oklchChanges = inlineOklchAsRgb(reportRef.current);
 
     try {
-      const filename = `competitive-ai-${slugify(results?.userCompany)}-${new Date().toISOString().slice(0, 10)}.pdf`;
-      await html2pdf()
-        .set({
-          margin: [10, 10, 10, 10],
-          filename,
-          image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            backgroundColor: '#ffffff',
-          },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] },
-        })
-        .from(reportRef.current)
-        .save();
+      // Expand all company sections so the full report prints
+      const allExpanded = {};
+      (results?.companies || []).forEach(c => { allExpanded[c.name] = true; });
+      setExpandedSections(allExpanded);
+
+      // Set a meaningful filename via the document title (browsers use this
+      // as the default name in the "Save as PDF" dialog)
+      const filename = `competitive-ai-${slugify(results?.userCompany)}-${new Date().toISOString().slice(0, 10)}`;
+      document.title = filename;
+
+      // Wait one paint so the expanded sections render
+      await new Promise(resolve => setTimeout(resolve, 250));
+
+      // Open print dialog. Returns when the dialog closes (saved or cancelled).
+      window.print();
     } catch (err) {
-      console.error('PDF export failed:', err);
-      alert('PDF export failed. Try Markdown export instead.');
+      console.error('Print failed:', err);
+      alert('Could not open print dialog. Try Markdown or JSON export instead.');
     } finally {
-      restoreOklch(oklchChanges);
+      // ALWAYS restore state — runs whether print succeeded, failed, or was cancelled
+      document.title = previousTitle;
       setExpandedSections(previousExpanded);
       setIsExporting(false);
     }
@@ -1172,7 +1094,7 @@ export default function CompetitiveIntelligence() {
                   setIndustry('');
                   setCompetitors(['', '', '', '', '']);
                 }}
-                className="mt-2 text-blue-600 hover:text-blue-700"
+                className="mt-2 text-blue-600 hover:text-blue-700 print:hidden"
               >
                 Start new research
               </button>
