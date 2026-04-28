@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Building2, Loader2, AlertCircle, TrendingUp, Briefcase, Cpu, Users, FileText, ChevronDown, ChevronUp, Plus, X, Sparkles, Link, ExternalLink, Clock } from 'lucide-react';
+import { Search, Building2, Loader2, AlertCircle, TrendingUp, Briefcase, Cpu, Users, FileText, ChevronDown, ChevronUp, Plus, X, Sparkles, Link, ExternalLink, Clock, Download, FileDown, FileJson, FileText as FileTextIcon } from 'lucide-react';
 import { useAssessment } from '../context/AssessmentContext';
+import html2pdf from 'html2pdf.js';
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -119,7 +120,10 @@ export default function CompetitiveIntelligence() {
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const [expandedSections, setExpandedSections] = useState({});
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const logEndRef = useRef(null);
+  const reportRef = useRef(null);
   const { ensureAssessment } = useAssessment();
 
   useEffect(() => {
@@ -207,6 +211,100 @@ export default function CompetitiveIntelligence() {
 
   const toggleSection = (key) => {
     setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // ---- Export helpers ----
+  const slugify = (s) => (s || 'report').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+  const buildMarkdown = () => {
+    if (!results) return '';
+    const lines = [];
+    lines.push(`# Competitive AI Intelligence Report`);
+    lines.push(`**Company:** ${results.userCompany}`);
+    lines.push(`**Industry:** ${results.industry}`);
+    lines.push(`**Generated:** ${results.generatedAt}`);
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+    lines.push('# Strategic Analysis');
+    lines.push('');
+    lines.push(results.synthesis || '');
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+    lines.push('# Detailed Research by Company');
+    lines.push('');
+    results.companies.forEach(comp => {
+      lines.push(`## ${comp.name}${comp.isUserCompany ? ' (Your Company)' : ''}`);
+      lines.push('');
+      lines.push(comp.research || '');
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+    });
+    return lines.join('\n');
+  };
+
+  const downloadBlob = (content, filename, type) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const exportMarkdown = () => {
+    const md = buildMarkdown();
+    const filename = `competitive-ai-${slugify(results?.userCompany)}-${new Date().toISOString().slice(0, 10)}.md`;
+    downloadBlob(md, filename, 'text/markdown;charset=utf-8');
+    setExportMenuOpen(false);
+  };
+
+  const exportJSON = () => {
+    const json = JSON.stringify(results, null, 2);
+    const filename = `competitive-ai-${slugify(results?.userCompany)}-${new Date().toISOString().slice(0, 10)}.json`;
+    downloadBlob(json, filename, 'application/json');
+    setExportMenuOpen(false);
+  };
+
+  const exportPDF = async () => {
+    if (!reportRef.current) return;
+    setIsExporting(true);
+    setExportMenuOpen(false);
+
+    // Expand all company sections so they render in the PDF
+    const previousExpanded = expandedSections;
+    const allExpanded = {};
+    results.companies.forEach(c => { allExpanded[c.name] = true; });
+    setExpandedSections(allExpanded);
+
+    // Wait for re-render
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    try {
+      const filename = `competitive-ai-${slugify(results?.userCompany)}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      await html2pdf()
+        .set({
+          margin: [10, 10, 10, 10],
+          filename,
+          image: { type: 'jpeg', quality: 0.95 },
+          html2canvas: { scale: 2, useCORS: true, logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] },
+        })
+        .from(reportRef.current)
+        .save();
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      alert('PDF export failed. Try Markdown export instead.');
+    } finally {
+      setExpandedSections(previousExpanded);
+      setIsExporting(false);
+    }
   };
 
   const runResearch = async () => {
@@ -744,12 +842,68 @@ export default function CompetitiveIntelligence() {
       <div className="min-h-screen bg-gray-50 py-8 px-4">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
-          <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">Competitive AI Intelligence Report</h1>
-            <p className="text-gray-600">{results.userCompany} vs. Competitors in {results.industry}</p>
+          <div className="relative mb-6">
+            <div className="text-center">
+              <h1 className="text-2xl font-bold text-gray-900">Competitive AI Intelligence Report</h1>
+              <p className="text-gray-600">{results.userCompany} vs. Competitors in {results.industry}</p>
+            </div>
+
+            {/* Export menu */}
+            <div className="absolute right-0 top-0 print:hidden">
+              <div className="relative">
+                <button
+                  onClick={() => setExportMenuOpen(o => !o)}
+                  disabled={isExporting}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-60"
+                >
+                  {isExporting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  Export
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+
+                {exportMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-10 overflow-hidden">
+                    <button
+                      onClick={exportPDF}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors text-sm text-gray-700"
+                    >
+                      <FileDown className="w-4 h-4 text-red-600" />
+                      <div>
+                        <div className="font-medium">Export as PDF</div>
+                        <div className="text-xs text-gray-500">Print-ready report</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={exportMarkdown}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors text-sm text-gray-700 border-t border-gray-100"
+                    >
+                      <FileTextIcon className="w-4 h-4 text-blue-600" />
+                      <div>
+                        <div className="font-medium">Export as Markdown</div>
+                        <div className="text-xs text-gray-500">Editable text format</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={exportJSON}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors text-sm text-gray-700 border-t border-gray-100"
+                    >
+                      <FileJson className="w-4 h-4 text-green-600" />
+                      <div>
+                        <div className="font-medium">Export as JSON</div>
+                        <div className="text-xs text-gray-500">Raw data</div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-6" ref={reportRef}>
             {/* Synthesis */}
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
               <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4">
