@@ -1,32 +1,123 @@
 @import "tailwindcss";
 
-/* Print styles for "Save as PDF" export */
+/* ============================================================
+   Print styles for "Save as PDF" export
+   ------------------------------------------------------------
+   The renderer in CompetitiveIntelligence emits raw <h2/h3/h4/p/li/br>
+   styled via Tailwind utilities (no .prose class), so print rules
+   target tags + the actual utilities used in the JSX.
+
+   Note: Browsers add their own header/footer (URL, date, page #) to
+   printed pages. CSS cannot remove them — the user has to uncheck
+   "Headers and footers" in the print dialog's More settings.
+   ============================================================ */
+
 @media print {
-  /* Force white page background and ensure colored backgrounds (e.g. the
-     gradient header on the synthesis card) actually print. */
-  html, body {
-    background: #ffffff !important;
+  @page {
+    size: letter;
+    margin: 0.5in;
   }
 
+  html, body {
+    background: #ffffff !important;
+    color: #1f2937;
+    font-size: 10pt;
+    line-height: 1.4;
+  }
+
+  /* Force colored backgrounds (gradient header) and dark text/icons
+     to actually render in print output. */
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* Avoid splitting headings, table rows, and report cards across pages
-     where possible. */
+  /* Strip outer page chrome — full bleed, no extra padding */
+  .min-h-screen { min-height: 0 !important; }
+  .py-8 { padding-top: 0 !important; padding-bottom: 0 !important; }
+  .px-4 { padding-left: 0 !important; padding-right: 0 !important; }
+  .max-w-4xl, .max-w-3xl, .max-w-2xl { max-width: 100% !important; }
+
+  /* Tighten card padding */
+  .p-6 { padding: 12pt !important; }
+  .p-4 { padding: 8pt !important; }
+  .mb-6 { margin-bottom: 8pt !important; }
+  .mt-6 { margin-top: 6pt !important; }
+  .mt-4 { margin-top: 4pt !important; }
+  .pt-0 { padding-top: 0 !important; }
+
+  /* Override Tailwind's space-y-* utilities for tighter inter-card gaps */
+  .space-y-6 > * + * { margin-top: 8pt !important; }
+  .space-y-4 > * + * { margin-top: 6pt !important; }
+
+  /* Strip drop shadows and rounded corners — they don't read well in print */
+  .shadow-sm, .shadow, .shadow-md, .shadow-lg { box-shadow: none !important; }
+  .rounded-xl, .rounded-lg, .rounded-full {
+    border-radius: 0 !important;
+  }
+
+  /* ---- Headings: tighter spacing + smaller sizes ---- */
+  h1 { font-size: 18pt !important; margin: 0.4em 0 0.2em !important; }
+  h2 { font-size: 13pt !important; margin: 0.5em 0 0.2em !important; padding-bottom: 0.15em !important; }
+  h3 { font-size: 11pt !important; margin: 0.4em 0 0.15em !important; }
+  h4 { font-size: 10pt !important; margin: 0.3em 0 0.1em !important; }
+
+  /* The renderer emits <p className="...mt-6 mb-3..."> etc. — tighten */
+  .mt-3 { margin-top: 0.25em !important; }
+  .mb-3 { margin-bottom: 0.2em !important; }
+  .mt-2 { margin-top: 0.2em !important; }
+  .mb-2 { margin-bottom: 0.15em !important; }
+  .my-4 { margin-top: 0.3em !important; margin-bottom: 0.3em !important; }
+  .my-1 { margin-top: 0.15em !important; margin-bottom: 0.15em !important; }
+
+  /* ---- Body text & lists ---- */
+  p { margin: 0.2em 0 !important; }
+  ul, ol { margin: 0.2em 0 0.4em !important; padding-left: 1.2em !important; }
+  li { margin: 0.05em 0 !important; }
+
+  /* The renderer emits <br> for every blank line in source markdown.
+     That dumps disproportionate whitespace into print — strip them. */
+  br { display: none !important; }
+
+  /* ---- Compact tables ---- */
+  table { font-size: 9pt !important; width: 100% !important; }
+  th, td { padding: 3pt 6pt !important; }
+
+  /* ---- Page-break controls ---- */
+  /* Don't orphan a heading at the bottom of a page */
   h1, h2, h3, h4 {
     break-after: avoid;
     page-break-after: avoid;
   }
 
-  table, tr, .bg-white {
+  /* Keep tables intact when they fit on a page */
+  table {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  /* Drop shadows print as gray boxes — strip them. */
-  .shadow-sm, .shadow, .shadow-md, .shadow-lg {
-    box-shadow: none !important;
+  /* Don't break right after the gradient header on the synthesis card */
+  .bg-gradient-to-r {
+    break-after: avoid;
+    page-break-after: avoid;
   }
+
+  /* ---- Toggle buttons in the per-company list ---- */
+  /* Hide chevron icons (sections are programmatically expanded for print
+     and the chevron is now meaningless visual noise). */
+  button svg.lucide-chevron-down,
+  button svg.lucide-chevron-up {
+    display: none !important;
+  }
+
+  /* Make the company-section toggle buttons read as static headings */
+  button.w-full {
+    cursor: default !important;
+    border-bottom: 1px solid #e5e7eb !important;
+  }
+
+  /* The "Detailed Research by Company" inline heading was rendered
+     inside .space-y-4 — extra top-margin to separate it from the
+     synthesis section, but not too much. */
+  .space-y-4 > h2 { margin-top: 0.5em !important; }
 }
