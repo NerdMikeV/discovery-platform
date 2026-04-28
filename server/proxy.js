@@ -193,6 +193,104 @@ app.post('/api/assessments/:id/employee-pulse', async (req, res) => {
   }
 });
 
+// ---- History endpoints ----
+
+// List saved competitive intel results
+app.get('/api/competitive-intel', async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { data, error } = await supabase
+      .from('competitive_intel')
+      .select('id, company_name, industry, created_at')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json(data || []);
+  } catch (error) {
+    console.error('List competitive intel error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get one saved competitive intel result
+app.get('/api/competitive-intel/:id', async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { data, error } = await supabase
+      .from('competitive_intel')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    console.error('Get competitive intel error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List saved vendor scan results (joined with parent assessment for company name)
+app.get('/api/vendor-scan', async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { data, error } = await supabase
+      .from('vendor_scan')
+      .select('id, created_at, assessment_id')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+
+    const ids = [...new Set((data || []).map(s => s.assessment_id).filter(Boolean))];
+    let nameMap = {};
+    if (ids.length) {
+      const { data: assessments } = await supabase
+        .from('assessments')
+        .select('id, company_name')
+        .in('id', ids);
+      nameMap = Object.fromEntries((assessments || []).map(a => [a.id, a.company_name]));
+    }
+
+    const flat = (data || []).map(s => ({
+      id: s.id,
+      created_at: s.created_at,
+      assessment_id: s.assessment_id,
+      company_name: nameMap[s.assessment_id] || 'Unknown',
+    }));
+    res.json(flat);
+  } catch (error) {
+    console.error('List vendor scan error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get one saved vendor scan result
+app.get('/api/vendor-scan/:id', async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { data, error } = await supabase
+      .from('vendor_scan')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (error) throw error;
+
+    let company_name = 'Unknown';
+    if (data?.assessment_id) {
+      const { data: assessment } = await supabase
+        .from('assessments')
+        .select('company_name')
+        .eq('id', data.assessment_id)
+        .single();
+      company_name = assessment?.company_name || 'Unknown';
+    }
+
+    res.json({ ...data, company_name });
+  } catch (error) {
+    console.error('Get vendor scan error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Catch-all for client-side routing - serve index.html for all other routes
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));

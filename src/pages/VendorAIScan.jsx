@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Package, Loader2, AlertCircle, ChevronDown, ChevronUp, Plus, X, Cpu, Zap, Calendar, Link, Clock } from 'lucide-react';
+import { Search, Package, Loader2, AlertCircle, ChevronDown, ChevronUp, Plus, X, Cpu, Zap, Calendar, Link, Clock, History, ArrowRight, Building2 } from 'lucide-react';
 import { useAssessment } from '../context/AssessmentContext';
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -138,6 +138,54 @@ export default function VendorAIScan() {
   const logEndRef = useRef(null);
   const { assessmentId, companyName: ctxCompanyName, setCompanyName: setCtxCompanyName, ensureAssessment } = useAssessment();
   const [localCompanyName, setLocalCompanyName] = useState('');
+  const [history, setHistory] = useState([]);
+  const [historyOpen, setHistoryOpen] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [loadingHistoryId, setLoadingHistoryId] = useState(null);
+
+  // Fetch saved scans when showing the form (no active research and no results)
+  useEffect(() => {
+    if (isResearching || results) return;
+    let cancelled = false;
+    (async () => {
+      setHistoryLoading(true);
+      try {
+        const res = await fetch('/api/vendor-scan');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setHistory(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Failed to load history:', err);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isResearching, results]);
+
+  const loadHistoryItem = async (id) => {
+    setLoadingHistoryId(id);
+    try {
+      const res = await fetch(`/api/vendor-scan/${id}`);
+      if (!res.ok) throw new Error('Failed to load scan');
+      const data = await res.json();
+      setResults({
+        vendors: Array.isArray(data.vendors) ? data.vendors : [],
+        synthesis: typeof data.synthesis === 'string'
+          ? data.synthesis
+          : (data.synthesis ? JSON.stringify(data.synthesis) : ''),
+        generatedAt: data.created_at
+          ? new Date(data.created_at).toLocaleString()
+          : 'Saved scan',
+        companyName: data.company_name,
+      });
+    } catch (err) {
+      console.error('Failed to load saved scan:', err);
+      setError('Could not load saved scan.');
+    } finally {
+      setLoadingHistoryId(null);
+    }
+  };
 
   useEffect(() => {
     if (logEndRef.current) {
@@ -674,6 +722,75 @@ export default function VendorAIScan() {
             <span>Research typically takes 1-2 minutes per vendor</span>
           </div>
         </div>
+
+        {/* Previous Reports */}
+        {(historyLoading || history.length > 0) && (
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <button
+              onClick={() => setHistoryOpen(o => !o)}
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-gray-600" />
+                <span className="font-medium text-gray-900">Previous Scans</span>
+                {history.length > 0 && (
+                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                    {history.length}
+                  </span>
+                )}
+              </div>
+              {historyOpen ? (
+                <ChevronUp className="w-5 h-5 text-gray-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-400" />
+              )}
+            </button>
+
+            {historyOpen && (
+              <div className="border-t border-gray-100">
+                {historyLoading ? (
+                  <div className="p-6 flex items-center justify-center gap-2 text-sm text-gray-500">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading...
+                  </div>
+                ) : history.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-gray-500">
+                    No saved scans yet.
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                    {history.map(item => (
+                      <li key={item.id}>
+                        <button
+                          onClick={() => loadHistoryItem(item.id)}
+                          disabled={loadingHistoryId === item.id}
+                          className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-purple-50 transition-colors text-left disabled:opacity-60"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-gray-900 truncate">
+                                {item.company_name || 'Unknown'}
+                              </div>
+                              <div className="text-xs text-gray-500 truncate">
+                                {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
+                              </div>
+                            </div>
+                          </div>
+                          {loadingHistoryId === item.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-purple-600 flex-shrink-0" />
+                          ) : (
+                            <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
