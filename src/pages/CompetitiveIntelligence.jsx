@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Building2, Loader2, AlertCircle, TrendingUp, Briefcase, Cpu, Users, FileText, ChevronDown, ChevronUp, Plus, X, Sparkles, Link, ExternalLink, Clock, Download, FileDown, FileJson, FileText as FileTextIcon, History, ArrowRight } from 'lucide-react';
+import { Search, Building2, Loader2, AlertCircle, TrendingUp, Briefcase, Cpu, Users, FileText, ChevronDown, ChevronUp, Plus, X, Sparkles, Link, ExternalLink, Clock, Download, FileDown, FileJson, FileText as FileTextIcon, FileType, History, ArrowRight } from 'lucide-react';
 import { useAssessment } from '../context/AssessmentContext';
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -322,6 +322,196 @@ export default function CompetitiveIntelligence() {
     const filename = `competitive-ai-${slugify(results?.userCompany)}-${new Date().toISOString().slice(0, 10)}.json`;
     downloadBlob(json, filename, 'application/json');
     setExportMenuOpen(false);
+  };
+
+  // Word (.docx) export. The docx and file-saver libraries are dynamically
+  // imported so they only load when the user clicks the export button —
+  // keeps the main JS bundle small.
+  const exportWord = async () => {
+    setExportMenuOpen(false);
+    setIsExporting(true);
+
+    try {
+      const [docxLib, fileSaverLib] = await Promise.all([
+        import('docx'),
+        import('file-saver'),
+      ]);
+      const {
+        Document, Packer, Paragraph, TextRun, HeadingLevel,
+        Table, TableRow, TableCell, WidthType,
+      } = docxLib;
+      const { saveAs } = fileSaverLib;
+
+      const stripBold = (s) => s.replace(/\*\*/g, '');
+
+      // Convert inline **bold** segments into TextRun arrays
+      const inlineRuns = (text) => {
+        const runs = [];
+        const parts = text.split(/(\*\*[^*]+\*\*)/);
+        parts.forEach(part => {
+          if (!part) return;
+          if (part.startsWith('**') && part.endsWith('**')) {
+            runs.push(new TextRun({ text: part.slice(2, -2), bold: true }));
+          } else {
+            runs.push(new TextRun({ text: part }));
+          }
+        });
+        return runs.length ? runs : [new TextRun({ text: '' })];
+      };
+
+      // Build a docx Table from a markdown table block
+      const buildTable = (header, dataRows) => new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({
+            tableHeader: true,
+            children: header.map(h => new TableCell({
+              shading: { fill: 'EEEEEE' },
+              children: [new Paragraph({
+                children: [new TextRun({ text: stripBold(h), bold: true })],
+              })],
+            })),
+          }),
+          ...dataRows.map(row => new TableRow({
+            children: row.map(cell => new TableCell({
+              children: [new Paragraph({ children: inlineRuns(stripBold(cell)) })],
+            })),
+          })),
+        ],
+      });
+
+      // Parse a markdown string into an array of docx Paragraph/Table blocks
+      const markdownToBlocks = (md) => {
+        if (!md) return [];
+        const lines = md.split('\n');
+        const blocks = [];
+        let i = 0;
+        while (i < lines.length) {
+          const line = lines[i];
+          const trimmed = line.trim();
+
+          if (!trimmed) { i++; continue; }
+
+          // Table block (collect contiguous |...| lines)
+          if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+            const tableLines = [];
+            while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+              tableLines.push(lines[i].trim());
+              i++;
+            }
+            if (tableLines.length >= 2) {
+              const split = (row) => row.split('|').slice(1, -1).map(s => s.trim());
+              const header = split(tableLines[0]);
+              const data = tableLines.slice(2).map(split);
+              blocks.push(buildTable(header, data));
+            }
+            continue;
+          }
+
+          // Skip horizontal rules
+          if (/^-{3,}$/.test(trimmed)) { i++; continue; }
+
+          // Headings
+          if (trimmed.startsWith('#### ')) {
+            blocks.push(new Paragraph({ text: stripBold(trimmed.slice(5)), heading: HeadingLevel.HEADING_4 }));
+            i++; continue;
+          }
+          if (trimmed.startsWith('### ')) {
+            blocks.push(new Paragraph({ text: stripBold(trimmed.slice(4)), heading: HeadingLevel.HEADING_3 }));
+            i++; continue;
+          }
+          if (trimmed.startsWith('## ')) {
+            blocks.push(new Paragraph({ text: stripBold(trimmed.slice(3)), heading: HeadingLevel.HEADING_2 }));
+            i++; continue;
+          }
+          if (trimmed.startsWith('# ')) {
+            blocks.push(new Paragraph({ text: stripBold(trimmed.slice(2)), heading: HeadingLevel.HEADING_1 }));
+            i++; continue;
+          }
+
+          // Bullet list — use docx's auto-bullet
+          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+            blocks.push(new Paragraph({
+              children: inlineRuns(trimmed.slice(2)),
+              bullet: { level: 0 },
+            }));
+            i++; continue;
+          }
+
+          // Numbered list — keep the AI-written number inline (avoids
+          // docx's cross-section numbering continuity issues, and matches
+          // exactly what the LLM generated).
+          if (/^\d+\.\s/.test(trimmed)) {
+            blocks.push(new Paragraph({
+              children: inlineRuns(trimmed),
+              indent: { left: 360 },
+            }));
+            i++; continue;
+          }
+
+          // Regular paragraph
+          blocks.push(new Paragraph({ children: inlineRuns(trimmed) }));
+          i++;
+        }
+        return blocks;
+      };
+
+      // ---- Build document ----
+      const children = [];
+
+      children.push(new Paragraph({
+        text: 'Competitive AI Intelligence Report',
+        heading: HeadingLevel.TITLE,
+      }));
+      children.push(new Paragraph({
+        children: [new TextRun({
+          text: `${results.userCompany} vs. Competitors in ${results.industry}`,
+          italics: true,
+        })],
+      }));
+      children.push(new Paragraph({
+        children: [new TextRun({
+          text: `Generated: ${results.generatedAt}`,
+          color: '666666',
+          size: 18, // half-points = 9pt
+        })],
+      }));
+      children.push(new Paragraph({ text: '' }));
+
+      // Synthesis section
+      children.push(new Paragraph({
+        text: 'Strategic Analysis',
+        heading: HeadingLevel.HEADING_1,
+      }));
+      children.push(...markdownToBlocks(results.synthesis || ''));
+
+      // Per-company research
+      children.push(new Paragraph({
+        text: 'Detailed Research by Company',
+        heading: HeadingLevel.HEADING_1,
+        pageBreakBefore: true,
+      }));
+      (results.companies || []).forEach(comp => {
+        children.push(new Paragraph({
+          text: `${comp.name}${comp.isUserCompany ? ' (Your Company)' : ''}`,
+          heading: HeadingLevel.HEADING_2,
+        }));
+        children.push(...markdownToBlocks(comp.research || ''));
+      });
+
+      const doc = new Document({
+        sections: [{ properties: {}, children }],
+      });
+
+      const filename = `competitive-ai-${slugify(results?.userCompany)}-${new Date().toISOString().slice(0, 10)}.docx`;
+      const blob = await Packer.toBlob(doc);
+      saveAs(blob, filename);
+    } catch (err) {
+      console.error('Word export failed:', err);
+      alert('Word export failed. Try Markdown export instead.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // PDF export uses the browser's native print dialog. The browser's CSS
@@ -1001,6 +1191,16 @@ export default function CompetitiveIntelligence() {
                       <div>
                         <div className="font-medium">Export as PDF</div>
                         <div className="text-xs text-gray-500">Print-ready report</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={exportWord}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors text-sm text-gray-700 border-t border-gray-100"
+                    >
+                      <FileType className="w-4 h-4 text-blue-700" />
+                      <div>
+                        <div className="font-medium">Export as Word</div>
+                        <div className="text-xs text-gray-500">Editable .docx document</div>
                       </div>
                     </button>
                     <button
